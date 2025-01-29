@@ -52,13 +52,11 @@
     <div id="route-output"></div>
 
     <script>
-      // Event listener for form submission
       document
         .getElementById("route-form")
         .addEventListener("submit", async function (e) {
           e.preventDefault();
 
-          // Get user-supplied API keys
           const googleApiKey = document.getElementById("google-api-key").value;
           const openWeatherApiKey = document.getElementById(
             "openweather-api-key",
@@ -71,7 +69,6 @@
           );
           const speed = document.getElementById("speed").value;
 
-          // Get route and weather data
           const route = await getRoute(from, to, googleApiKey);
           const weatherData = await getWeatherForRoute(
             route,
@@ -83,7 +80,6 @@
           displayRouteDetails(route, weatherData);
         });
 
-      // Function to get the route using Google Maps Directions API
       async function getRoute(from, to, googleApiKey) {
         const directionsUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(from)}&destination=${encodeURIComponent(to)}&key=${googleApiKey}`;
 
@@ -92,13 +88,12 @@
 
         if (data.status !== "OK") {
           alert("Error fetching route data");
-          return;
+          return [];
         }
 
-        return data.routes[0].legs[0].steps; // Get the steps from the route
+        return data.routes[0].legs[0].steps; // Get step-by-step directions
       }
 
-      // Function to get weather data for each 5km marker along the route
       async function getWeatherForRoute(
         route,
         departureTime,
@@ -106,63 +101,67 @@
         openWeatherApiKey,
       ) {
         const weatherData = [];
+        const weatherCheckInterval = 5 * 60 * 1000; // 5 minutes in milliseconds
+        let travelTime = 0;
 
-        // Set cycling speeds based on user selection
+        // Set cycling speeds in meters per second
         const speedValues = {
-          leisurely: 20, // 20 km/h
-          active: 25, // 25 km/h
-          racing: 30, // 30 km/h
+          leisurely: 20 / 3.6, // Convert km/h to m/s
+          active: 25 / 3.6,
+          racing: 30 / 3.6,
         };
 
-        const selectedSpeed = speedValues[speed] || 20; // Default to "leisurely" if invalid
+        const selectedSpeed = speedValues[speed] || 20 / 3.6; // Default to "leisurely"
 
-        // We'll check weather every 5km along the route
         for (let i = 0; i < route.length; i++) {
-          if (i % 5 === 0) {
-            const step = route[i];
-            const distance = step.distance.value / 1000; // Convert meters to kilometers
-            const arrivalTime = new Date(
-              departureTime.getTime() +
-                (distance / selectedSpeed) * 3600 * 1000,
-            ); // Calculate time based on selected speed
+          const step = route[i];
+          const stepDistance = step.distance.value; // Distance in meters
+          const stepTime = (stepDistance / selectedSpeed) * 1000; // Time in milliseconds
+
+          travelTime += stepTime;
+
+          if (travelTime >= weatherCheckInterval) {
+            const arrivalTime = new Date(departureTime.getTime() + travelTime);
 
             const weather = await getWeatherForLocation(
               step.end_location,
               arrivalTime,
               openWeatherApiKey,
             );
-            weatherData.push({ step, weather });
+            weatherData.push({ step, weather, arrivalTime });
+
+            travelTime = 0; // Reset after requesting weather data
           }
         }
 
         return weatherData;
       }
 
-      // Function to get the weather at a specific location at a given time
       async function getWeatherForLocation(
         location,
         arrivalTime,
         openWeatherApiKey,
       ) {
-        const weatherUrl = `https://api.openweathermap.org/data/2.5/onecall?lat=${location.lat}&lon=${location.lng}&dt=${Math.floor(arrivalTime.getTime() / 1000)}&appid=${openWeatherApiKey}`;
+        const timestamp = Math.floor(arrivalTime.getTime() / 1000); // Convert to UNIX timestamp
+        const weatherUrl = `https://api.openweathermap.org/data/2.5/onecall?lat=${location.lat}&lon=${location.lng}&dt=${timestamp}&appid=${openWeatherApiKey}`;
 
         const response = await fetch(weatherUrl);
         const data = await response.json();
 
-        return data.current.weather[0].description; // Get weather description (rain, clear, etc.)
+        return data.current.weather[0].description; // Get weather description (e.g., "rain", "clear")
       }
 
-      // Function to display the route and weather data
       function displayRouteDetails(route, weatherData) {
         const outputDiv = document.getElementById("route-output");
         outputDiv.innerHTML = "";
 
-        weatherData.forEach(({ step, weather }) => {
+        weatherData.forEach(({ step, weather, arrivalTime }) => {
           const marker = document.createElement("div");
           marker.innerHTML = `
-          <p><strong>Step:</strong> ${step.html_instructions}</p>
-          <p><strong>Distance:</strong> ${step.distance.text}</p>
-          <p><strong>Weather at Arrival:</strong> ${weather}</p>
+            <p><strong>Step:</strong> ${step.html_instructions}</p>
+            <p><strong>Distance:</strong> ${step.distance.text}</p>
+            <p><strong>Arrival Time:</strong> ${arrivalTime.toLocaleTimeString()}</p>
+            <p><strong>Weather at Arrival:</strong> ${weather}</p>
         `;
           outputDiv.appendChild(marker);
         });
