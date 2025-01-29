@@ -104,33 +104,37 @@
         const weatherCheckInterval = 5 * 60 * 1000; // 5 minutes in milliseconds
         let travelTime = 0;
 
-        // Set cycling speeds in meters per second
         const speedValues = {
-          leisurely: 20 / 3.6, // Convert km/h to m/s
+          leisurely: 20 / 3.6,
           active: 25 / 3.6,
           racing: 30 / 3.6,
         };
+        const selectedSpeed = speedValues[speed] || 20 / 3.6;
 
-        const selectedSpeed = speedValues[speed] || 20 / 3.6; // Default to "leisurely"
-
-        for (let i = 0; i < route.length; i++) {
+        for (let i = 0; i < route.length - 1; i++) {
           const step = route[i];
-          const stepDistance = step.distance.value; // Distance in meters
-          const stepTime = (stepDistance / selectedSpeed) * 1000; // Time in milliseconds
+          const nextStep = route[i + 1];
+          const stepDistance = step.distance.value;
+          const stepTime = (stepDistance / selectedSpeed) * 1000;
 
           travelTime += stepTime;
 
           if (travelTime >= weatherCheckInterval) {
             const arrivalTime = new Date(departureTime.getTime() + travelTime);
 
-            const weather = await getWeatherForLocation(
+            const { weather, windDeg } = await getWeatherForLocation(
               step.end_location,
               arrivalTime,
               openWeatherApiKey,
             );
-            weatherData.push({ step, weather, arrivalTime });
+            const cyclingDirection = calculateDirection(
+              step.end_location,
+              nextStep.end_location,
+            );
+            const windEffect = determineWindEffect(windDeg, cyclingDirection);
 
-            travelTime = 0; // Reset after requesting weather data
+            weatherData.push({ step, weather, windEffect, arrivalTime });
+            travelTime = 0;
           }
         }
 
@@ -142,26 +146,58 @@
         arrivalTime,
         openWeatherApiKey,
       ) {
-        const timestamp = Math.floor(arrivalTime.getTime() / 1000); // Convert to UNIX timestamp
+        const timestamp = Math.floor(arrivalTime.getTime() / 1000);
         const weatherUrl = `https://api.openweathermap.org/data/2.5/onecall?lat=${location.lat}&lon=${location.lng}&dt=${timestamp}&appid=${openWeatherApiKey}`;
 
         const response = await fetch(weatherUrl);
         const data = await response.json();
 
-        return data.current.weather[0].description; // Get weather description (e.g., "rain", "clear")
+        return {
+          weather: data.current.weather[0].description,
+          windDeg: data.current.wind_deg,
+        };
       }
 
+      // Calculate bearing (direction) between two points
+      function calculateDirection(start, end) {
+        const lat1 = (Math.PI / 180) * start.lat;
+        const lat2 = (Math.PI / 180) * end.lat;
+        const deltaLng = (Math.PI / 180) * (end.lng - start.lng);
+
+        const y = Math.sin(deltaLng) * Math.cos(lat2);
+        const x =
+          Math.cos(lat1) * Math.sin(lat2) -
+          Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLng);
+
+        return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360; // Normalize to 0-360°
+      }
+
+      // Determine wind impact based on direction
+      function determineWindEffect(windDeg, cyclingDirection) {
+        const angleDiff = Math.abs(windDeg - cyclingDirection);
+
+        if (angleDiff <= 30 || angleDiff >= 330) {
+          return "Tailwind ✅";
+        } else if (angleDiff >= 150 && angleDiff <= 210) {
+          return "Headwind 🆘";
+        } else {
+          return "Crosswind 🌬️";
+        }
+      }
+
+      // Display the updated data
       function displayRouteDetails(route, weatherData) {
         const outputDiv = document.getElementById("route-output");
         outputDiv.innerHTML = "";
 
-        weatherData.forEach(({ step, weather, arrivalTime }) => {
+        weatherData.forEach(({ step, weather, windEffect, arrivalTime }) => {
           const marker = document.createElement("div");
           marker.innerHTML = `
             <p><strong>Step:</strong> ${step.html_instructions}</p>
             <p><strong>Distance:</strong> ${step.distance.text}</p>
             <p><strong>Arrival Time:</strong> ${arrivalTime.toLocaleTimeString()}</p>
             <p><strong>Weather at Arrival:</strong> ${weather}</p>
+            <p><strong>Wind Effect:</strong> ${windEffect}</p>
         `;
           outputDiv.appendChild(marker);
         });
