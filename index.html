@@ -52,11 +52,27 @@
     <div id="route-output"></div>
 
     <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        // Load saved values from localStorage
+        document.getElementById("from").value =
+          localStorage.getItem("from") || "";
+        document.getElementById("to").value = localStorage.getItem("to") || "";
+        document.getElementById("speed").value =
+          localStorage.getItem("cycling-speed") || "leisurely";
+
+        // Set default departure time to current timestamp
+        const now = new Date();
+        document.getElementById("departure-time").value = now
+          .toISOString()
+          .slice(0, 16);
+      });
+
       document
         .getElementById("route-form")
         .addEventListener("submit", async function (e) {
           e.preventDefault();
 
+          // Get values from form
           const googleApiKey = document.getElementById("google-api-key").value;
           const openWeatherApiKey = document.getElementById(
             "openweather-api-key",
@@ -68,6 +84,11 @@
             document.getElementById("departure-time").value,
           );
           const speed = document.getElementById("speed").value;
+
+          // Save values to localStorage
+          localStorage.setItem("from", from);
+          localStorage.setItem("to", to);
+          localStorage.setItem("cycling-speed", speed);
 
           const route = await getRoute(from, to, googleApiKey);
           const weatherData = await getWeatherForRoute(
