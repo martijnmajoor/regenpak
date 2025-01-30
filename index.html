@@ -1,35 +1,59 @@
 <!doctype html>
 <html lang="en">
+  <!-- Previous head section remains the same -->
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cycling Route Weather</title>
     <style>
-      #map {
-        height: 400px;
-        width: 100%;
-        margin: 20px 0;
-      }
       .route-step {
         margin: 20px 0;
-        padding: 10px;
+        padding: 20px;
         border: 1px solid #ccc;
         border-radius: 4px;
+        background-color: #f9f9f9;
       }
-      .marker-label {
-        position: absolute;
-        background-color: white;
+      .route-step h3 {
+        margin-top: 0;
+        color: #333;
+      }
+      .checkpoint-number {
+        display: inline-block;
+        background-color: #007bff;
+        color: white;
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
-        padding: 5px 10px;
-        font-size: 14px;
-        font-weight: bold;
-        color: black;
-        border: 1px solid black;
         text-align: center;
+        line-height: 24px;
+        margin-right: 10px;
+      }
+      .risk-high {
+        background-color: #ffebee;
+        border-color: #ef5350;
+      }
+      .risk-moderate {
+        background-color: #fff3e0;
+        border-color: #ff9800;
+      }
+      .ice-warning {
+        margin-top: 10px;
+        padding: 8px;
+        border-radius: 4px;
+        font-weight: bold;
+      }
+      .risk-high .ice-warning {
+        background-color: #ef5350;
+        color: white;
+      }
+      .risk-moderate .ice-warning {
+        background-color: #ff9800;
+        color: white;
       }
     </style>
   </head>
   <body>
+    <!-- Previous HTML form remains the same -->
     <h1>Cycling Route Weather</h1>
     <form id="route-form">
       <label for="from">Address From:</label>
@@ -69,27 +93,15 @@
         required
       /><br />
 
-      <label for="map-id">Google Maps Map ID:</label>
-      <input
-        type="text"
-        id="map-id"
-        name="map-id"
-        placeholder="Enter Map ID"
-        required
-      /><br />
-
       <button type="submit">Get Route</button>
     </form>
 
-    <div id="map"></div>
     <div id="route-output"></div>
 
     <script>
-      let map;
-      let markers = [];
-      let polyline;
       let googleMapsLoaded = false;
 
+      // Previous event listeners and initialization code remains the same
       document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("from").value =
           localStorage.getItem("from") || "";
@@ -120,19 +132,13 @@
               document.getElementById("departure-time").value,
             );
             const speed = document.getElementById("speed").value;
-            const mapId = document.getElementById("map-id").value;
-
-            if (!mapId) {
-              alert("Map ID is required to enable Advanced Markers.");
-              return;
-            }
 
             localStorage.setItem("from", from);
             localStorage.setItem("to", to);
             localStorage.setItem("cycling-speed", speed);
 
             if (!googleMapsLoaded) {
-              await loadGoogleMapsAPI(googleApiKey, mapId);
+              await loadGoogleMapsAPI(googleApiKey);
             }
 
             const route = await getRoute(from, to);
@@ -142,7 +148,6 @@
               speed,
               openWeatherApiKey,
             );
-            displayRouteOnMap(route, weatherData);
             displayRouteDetails(weatherData);
           } catch (error) {
             console.error("Error:", error);
@@ -150,56 +155,69 @@
           }
         });
 
-      async function loadGoogleMapsAPI(apiKey, mapId) {
+      // Previous API loading and route fetching functions remain the same
+      async function loadGoogleMapsAPI(apiKey) {
         if (googleMapsLoaded) return;
 
         return new Promise((resolve, reject) => {
-          // Create a callback function before loading the script
-          window.initMap = () => {
-            try {
-              map = new google.maps.Map(document.getElementById("map"), {
-                zoom: 12,
-                center: { lat: 0, lng: 0 },
-                mapId: mapId,
-                // Add WebGL optimization settings
-                renderingType: "UNINITIALIZED",
-                webglContextAttributes: {
-                  antialias: true,
-                  powerPreference: "high-performance",
-                },
-              });
-              googleMapsLoaded = true;
-              resolve();
-            } catch (error) {
-              reject(error);
-            }
-          };
-
-          // Create loading script element
           const script = document.createElement("script");
           const url = new URL("https://maps.googleapis.com/maps/api/js");
           url.searchParams.append("key", apiKey);
-          url.searchParams.append("callback", "initMap");
-          url.searchParams.append("libraries", "geometry,marker");
+          url.searchParams.append("libraries", "geometry");
           url.searchParams.append("v", "weekly");
-          url.searchParams.append("map_ids", mapId);
 
           script.src = url.toString();
           script.async = true;
           script.defer = true;
           script.onerror = reject;
 
-          // Add script to document
+          script.onload = () => {
+            googleMapsLoaded = true;
+            resolve();
+          };
+
           document.head.appendChild(script);
         });
       }
 
-      function clearMap() {
-        markers.forEach((marker) => marker.setMap(null));
-        markers = [];
-        if (polyline) {
-          polyline.setMap(null);
+      function extractLocationName(instructions) {
+        if (!instructions) return null;
+
+        // Remove HTML tags
+        instructions = instructions.replace(/<[^>]*>/g, "");
+
+        // List of phrases to remove from the beginning
+        const phrasesToRemove = [
+          /^Head [a-z]+ on /i,
+          /^Turn [a-z]+ onto /i,
+          /^Turn [a-z]+ to stay on /i,
+          /^Continue onto /i,
+          /^Take the /i,
+          /^Use the /i,
+          /^Make a U-turn at /i,
+          /^Slight [a-z]+ onto /i,
+          /^Sharp [a-z]+ onto /i,
+          /^Turn [a-z]+ at /i,
+          /^Exit the roundabout onto /i,
+          /^Enter the roundabout and /i,
+          /^At the roundabout, /i,
+        ];
+
+        // Remove each phrase if found at the start
+        phrasesToRemove.forEach((phrase) => {
+          instructions = instructions.replace(phrase, "");
+        });
+
+        // If after cleaning we're left with just directional instructions, return null
+        if (
+          /^(Slight|Sharp|Turn|Head|Continue|Use|Take|Make|Enter|Exit) /.test(
+            instructions,
+          )
+        ) {
+          return null;
         }
+
+        return instructions.trim();
       }
 
       async function getRoute(from, to) {
@@ -221,6 +239,7 @@
         });
       }
 
+      // Previous weather fetching functions remain the same
       async function getWeatherForRoute(
         route,
         departureTime,
@@ -241,15 +260,50 @@
         let currentTime = departureTime.getTime();
         let lastMarkerTime = currentTime;
 
-        weatherResults.push({
-          position: route[0].start_location,
-          weather: "Starting point",
-          windEffect: "Unknown",
-          arrivalTime: new Date(currentTime),
-          distance: 0,
-          step: route[0],
-        });
+        // Get weather for starting point
+        try {
+          const startPoint = route[0];
+          const timestamp = Math.floor(currentTime / 1000);
+          const weatherResponse = await fetch(
+            `https://api.openweathermap.org/data/2.5/onecall?lat=${startPoint.start_location.lat()}&lon=${startPoint.start_location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}`,
+          );
 
+          if (!weatherResponse.ok) {
+            throw new Error(`Weather API error: ${weatherResponse.status}`);
+          }
+
+          const weatherData = await weatherResponse.json();
+
+          if (!weatherData || !weatherData.current) {
+            throw new Error("Invalid weather data received");
+          }
+
+          weatherResults.push({
+            position: startPoint.start_location,
+            weather: weatherData.current.weather[0].description,
+            windEffect: determineWindEffect(
+              weatherData.current.wind_deg,
+              selectedSpeed,
+            ),
+            arrivalTime: new Date(currentTime),
+            distance: 0,
+            step: startPoint,
+            instructions: startPoint.instructions,
+          });
+        } catch (error) {
+          console.error("Weather API error for starting point:", error);
+          weatherResults.push({
+            position: route[0].start_location,
+            weather: "Weather data unavailable",
+            windEffect: "Unknown",
+            arrivalTime: new Date(currentTime),
+            distance: 0,
+            step: route[0],
+            instructions: route[0].instructions,
+          });
+        }
+
+        // Process intermediate points
         for (let i = 0; i < route.length - 1; i++) {
           const startPoint = route[i];
           const endPoint = route[i + 1];
@@ -261,9 +315,7 @@
             );
 
           const travelTime = (distanceBetweenPoints / selectedSpeed) * 1000;
-
           accumulatedTime += travelTime;
-
           const arrivalTime = new Date(lastMarkerTime + accumulatedTime);
 
           if (accumulatedTime >= weatherCheckInterval) {
@@ -293,6 +345,7 @@
                 arrivalTime: arrivalTime,
                 distance: accumulatedTime / 1000,
                 step: endPoint,
+                instructions: endPoint.instructions,
               });
 
               lastMarkerTime = arrivalTime.getTime();
@@ -306,6 +359,7 @@
                 arrivalTime: arrivalTime,
                 distance: accumulatedTime / 1000,
                 step: endPoint,
+                instructions: endPoint.instructions,
               });
 
               lastMarkerTime = arrivalTime.getTime();
@@ -314,21 +368,53 @@
           }
         }
 
+        // Get weather for destination point
         const finalPoint = route[route.length - 1];
         const finalArrivalTime = new Date(lastMarkerTime + accumulatedTime);
 
-        weatherResults.push({
-          position: finalPoint.start_location,
-          weather: "Destination reached",
-          windEffect: "Unknown",
-          arrivalTime: finalArrivalTime,
-          distance: accumulatedTime / 1000,
-          step: finalPoint,
-        });
+        try {
+          const timestamp = Math.floor(finalArrivalTime.getTime() / 1000);
+          const weatherResponse = await fetch(
+            `https://api.openweathermap.org/data/2.5/onecall?lat=${finalPoint.start_location.lat()}&lon=${finalPoint.start_location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}`,
+          );
+
+          if (!weatherResponse.ok) {
+            throw new Error(`Weather API error: ${weatherResponse.status}`);
+          }
+
+          const weatherData = await weatherResponse.json();
+
+          if (!weatherData || !weatherData.current) {
+            throw new Error("Invalid weather data received");
+          }
+
+          weatherResults.push({
+            position: finalPoint.start_location,
+            weather: weatherData.current.weather[0].description,
+            windEffect: determineWindEffect(
+              weatherData.current.wind_deg,
+              selectedSpeed,
+            ),
+            arrivalTime: finalArrivalTime,
+            distance: accumulatedTime / 1000,
+            step: finalPoint,
+            instructions: finalPoint.instructions,
+          });
+        } catch (error) {
+          console.error("Weather API error for destination point:", error);
+          weatherResults.push({
+            position: finalPoint.start_location,
+            weather: "Weather data unavailable",
+            windEffect: "Unknown",
+            arrivalTime: finalArrivalTime,
+            distance: accumulatedTime / 1000,
+            step: finalPoint,
+            instructions: finalPoint.instructions,
+          });
+        }
 
         return weatherResults;
       }
-
       function determineWindEffect(windDeg, cyclingDirection) {
         const angleDiff = Math.abs(windDeg - cyclingDirection);
 
@@ -341,79 +427,6 @@
         }
       }
 
-      function displayRouteOnMap(route, weatherData) {
-        clearMap();
-
-        const path = [];
-        route.forEach((step) => {
-          if (step.path) {
-            path.push(...step.path);
-          } else {
-            path.push(step.start_location);
-          }
-        });
-        if (route.length > 0) {
-          path.push(route[route.length - 1].end_location);
-        }
-
-        polyline = new google.maps.Polyline({
-          path: path,
-          geodesic: true,
-          strokeColor: "#FF0000",
-          strokeOpacity: 1.0,
-          strokeWeight: 2,
-          map: map,
-        });
-
-        weatherData.forEach((point, index) => {
-          const marker = new google.maps.marker.AdvancedMarkerElement({
-            position: point.position,
-            map: map,
-            title: `Weather Checkpoint ${index + 1}`,
-          });
-
-          const customLabel = new google.maps.OverlayView();
-          customLabel.onAdd = function () {
-            const label = document.createElement("div");
-            label.classList.add("marker-label");
-            label.innerText = (index + 1).toString();
-            this.getPanes().overlayLayer.appendChild(label);
-
-            this.draw = function () {
-              const position = this.getProjection().fromLatLngToDivPixel(
-                marker.position,
-              );
-              label.style.left = `${position.x - label.offsetWidth / 2}px`;
-              label.style.top = `${position.y - label.offsetHeight / 2}px`;
-            };
-          };
-          customLabel.setMap(map);
-
-          const infoWindow = new google.maps.InfoWindow({
-            content: `
-        <div>
-          <p><strong>Time:</strong> ${point.arrivalTime.toLocaleTimeString()}</p>
-          <p><strong>Weather:</strong> ${point.weather}</p>
-          <p><strong>Wind Effect:</strong> ${point.windEffect}</p>
-          <p><strong>Distance:</strong> ${(point.distance / 1000).toFixed(2)} km</p>
-        </div>
-      `,
-          });
-
-          marker.addListener("click", () => {
-            infoWindow.open(map, marker);
-          });
-
-          markers.push(marker);
-        });
-
-        // Move map to first marker after it's rendered
-        if (markers.length > 0) {
-          map.panTo(markers[0].position); // Use `position` directly
-          map.setZoom(14); // Optional: adjust zoom level as needed
-        }
-      }
-
       function displayRouteDetails(weatherData) {
         const output = document.getElementById("route-output");
         output.innerHTML = "";
@@ -421,8 +434,21 @@
         weatherData.forEach((point, index) => {
           const stepDiv = document.createElement("div");
           stepDiv.classList.add("route-step");
+
+          let locationName = extractLocationName(point.instructions);
+
+          // Use default checkpoint name if no location name is found
+          if (!locationName) {
+            locationName =
+              index === 0
+                ? "Starting Point"
+                : index === weatherData.length - 1
+                  ? "Destination"
+                  : `Checkpoint ${index}`;
+          }
+
           stepDiv.innerHTML = `
-            <h3>Checkpoint ${index + 1}</h3>
+            <h3><span class="checkpoint-number">${index + 1}</span>${locationName}</h3>
             <p><strong>Time:</strong> ${point.arrivalTime.toLocaleTimeString()}</p>
             <p><strong>Weather:</strong> ${point.weather}</p>
             <p><strong>Wind Effect:</strong> ${point.windEffect}</p>
