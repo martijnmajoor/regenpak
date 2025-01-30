@@ -50,6 +50,20 @@
         background-color: #ff9800;
         color: white;
       }
+      .weather-point {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.5rem;
+      }
+      .weather-icon {
+        font-size: 1.5rem;
+        cursor: help;
+      }
+      .black-ice-warning {
+        color: #ff4444;
+        font-weight: bold;
+      }
     </style>
   </head>
   <body>
@@ -324,7 +338,7 @@
       function determineWindEffect(windDeg, cyclingDirection) {
         // Calculate the relative angle between wind and cycling direction
         const relativeAngle = Math.abs(windDeg - cyclingDirection);
-        
+
         // Wind coming from behind (tailwind): 0° ± 30°
         if (relativeAngle <= 30 || relativeAngle >= 330) {
           return "Tailwind ✅";
@@ -339,10 +353,36 @@
         }
       }
 
-      async function fetchWeatherData(location, nextLocation, timestamp, openWeatherApiKey) {
+      function getWeatherIcon(weatherDescription) {
+        // Convert description to lowercase for easier matching
+        const desc = weatherDescription.toLowerCase();
+        
+        if (desc.includes('clear') || desc.includes('sunny')) {
+          return '☀️';
+        } else if (desc.includes('rain') || desc.includes('drizzle')) {
+          return '🌧️';
+        } else if (desc.includes('snow') || desc.includes('sleet')) {
+          return '🌨️';
+        } else if (desc.includes('thunder') || desc.includes('storm')) {
+          return '⛈️';
+        } else if (desc.includes('cloud')) {
+          return '☁️';
+        } else if (desc.includes('mist') || desc.includes('fog')) {
+          return '🌫️';
+        } else {
+          return '❓'; // fallback for unknown weather conditions
+        }
+      }
+
+      async function fetchWeatherData(
+        location,
+        nextLocation,
+        timestamp,
+        openWeatherApiKey,
+      ) {
         try {
           const weatherResponse = await fetch(
-            `https://api.openweathermap.org/data/2.5/onecall?lat=${location.lat()}&lon=${location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}&units=metric`
+            `https://api.openweathermap.org/data/2.5/onecall?lat=${location.lat()}&lon=${location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}&units=metric`,
           );
 
           if (!weatherResponse.ok) {
@@ -355,28 +395,26 @@
             throw new Error("Invalid weather data received");
           }
 
-          // Calculate cycling direction using Google Maps geometry
           let cyclingDirection = 0;
           if (nextLocation) {
             cyclingDirection = google.maps.geometry.spherical.computeHeading(location, nextLocation);
-            // Normalize to 0-360 range
             cyclingDirection = (cyclingDirection + 360) % 360;
           }
 
           const blackIceRisk = calculateBlackIceRisk(weatherData);
 
           return {
-            weather: weatherData.current.weather[0].description,
+            weatherIcon: getWeatherIcon(weatherData.current.weather[0].description),
             windEffect: determineWindEffect(weatherData.current.wind_deg, cyclingDirection),
             blackIceRisk
           };
         } catch (error) {
           console.error("Weather API error:", error);
           return {
-            weather: "Weather data unavailable",
-            windEffect: "Unknown",
+            weatherIcon: '❓',
+            windEffect: null,
             blackIceRisk: {
-              riskLevel: "UNKNOWN",
+              riskLevel: "NONE",
               riskScore: 0,
               riskFactors: []
             }
@@ -384,7 +422,12 @@
         }
       }
 
-      async function getWeatherForRoute(route, departureTime, speed, openWeatherApiKey) {
+      async function getWeatherForRoute(
+        route,
+        departureTime,
+        speed,
+        openWeatherApiKey,
+      ) {
         const weatherResults = [];
         const weatherCheckInterval = 5 * 60 * 1000;
 
@@ -406,7 +449,7 @@
           startPoint.start_location,
           nextPoint ? nextPoint.start_location : null,
           Math.floor(currentTime / 1000),
-          openWeatherApiKey
+          openWeatherApiKey,
         );
 
         weatherResults.push({
@@ -434,12 +477,13 @@
           const arrivalTime = new Date(lastMarkerTime + accumulatedTime);
 
           if (accumulatedTime >= weatherCheckInterval) {
-            const nextLocation = (i + 2 < route.length) ? route[i + 2].start_location : null;
+            const nextLocation =
+              i + 2 < route.length ? route[i + 2].start_location : null;
             const pointWeather = await fetchWeatherData(
               endPoint.start_location,
               nextLocation,
               Math.floor(arrivalTime.getTime() / 1000),
-              openWeatherApiKey
+              openWeatherApiKey,
             );
 
             weatherResults.push({
@@ -463,7 +507,7 @@
           finalPoint.start_location,
           null, // No next point for the final destination
           Math.floor(finalArrivalTime.getTime() / 1000),
-          openWeatherApiKey
+          openWeatherApiKey,
         );
 
         weatherResults.push({
@@ -520,14 +564,21 @@
 
           stepDiv.innerHTML = `
             <h3><span class="checkpoint-number">${index + 1}</span>${locationName}</h3>
-            <p><strong>Time:</strong> ${point.arrivalTime.toLocaleTimeString()}</p>
-            <p><strong>Weather:</strong> ${point.weather}</p>
-            <p><strong>Wind Effect:</strong> ${point.windEffect}</p>
-            <p><strong>Distance:</strong> ${(point.distance / 1000).toFixed(2)} km</p>
-            ${iceWarning}
+            ${displayWeatherPoint(point)}
           `;
           output.appendChild(stepDiv);
         });
+      }
+
+      function displayWeatherPoint(weatherPoint) {
+        return `
+          <div class="weather-point">
+            <div class="arrival-time">${weatherPoint.arrivalTime.toLocaleTimeString()}</div>
+            <div class="weather-icon">${weatherPoint.weatherIcon}</div>
+            ${weatherPoint.windEffect ? `<div class="wind-effect">${weatherPoint.windEffect}</div>` : ''}
+            ${weatherPoint.blackIceRisk.riskLevel !== "NONE" ? '<div class="black-ice-warning">⛸️</div>' : ''}
+          </div>
+        `;
       }
     </script>
   </body>
