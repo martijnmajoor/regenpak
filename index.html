@@ -321,13 +321,70 @@
         }
       }
 
-      // Previous weather fetching functions remain the same
-      async function getWeatherForRoute(
-        route,
-        departureTime,
-        speed,
-        openWeatherApiKey,
-      ) {
+      function determineWindEffect(windDeg, cyclingDirection) {
+        // Calculate the relative angle between wind and cycling direction
+        const relativeAngle = Math.abs(windDeg - cyclingDirection);
+        
+        // Wind coming from behind (tailwind): 0° ± 30°
+        if (relativeAngle <= 30 || relativeAngle >= 330) {
+          return "Tailwind ✅";
+        }
+        // Wind coming from front (headwind): 180° ± 30°
+        else if (relativeAngle >= 150 && relativeAngle <= 210) {
+          return "Headwind 🆘";
+        }
+        // All other angles are considered crosswind
+        else {
+          return "Crosswind 🌬️";
+        }
+      }
+
+      async function fetchWeatherData(location, nextLocation, timestamp, openWeatherApiKey) {
+        try {
+          const weatherResponse = await fetch(
+            `https://api.openweathermap.org/data/2.5/onecall?lat=${location.lat()}&lon=${location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}&units=metric`
+          );
+
+          if (!weatherResponse.ok) {
+            throw new Error(`Weather API error: ${weatherResponse.status}`);
+          }
+
+          const weatherData = await weatherResponse.json();
+
+          if (!weatherData || !weatherData.current) {
+            throw new Error("Invalid weather data received");
+          }
+
+          // Calculate cycling direction using Google Maps geometry
+          let cyclingDirection = 0;
+          if (nextLocation) {
+            cyclingDirection = google.maps.geometry.spherical.computeHeading(location, nextLocation);
+            // Normalize to 0-360 range
+            cyclingDirection = (cyclingDirection + 360) % 360;
+          }
+
+          const blackIceRisk = calculateBlackIceRisk(weatherData);
+
+          return {
+            weather: weatherData.current.weather[0].description,
+            windEffect: determineWindEffect(weatherData.current.wind_deg, cyclingDirection),
+            blackIceRisk
+          };
+        } catch (error) {
+          console.error("Weather API error:", error);
+          return {
+            weather: "Weather data unavailable",
+            windEffect: "Unknown",
+            blackIceRisk: {
+              riskLevel: "UNKNOWN",
+              riskScore: 0,
+              riskFactors: []
+            }
+          };
+        }
+      }
+
+      async function getWeatherForRoute(route, departureTime, speed, openWeatherApiKey) {
         const weatherResults = [];
         const weatherCheckInterval = 5 * 60 * 1000;
 
@@ -343,55 +400,23 @@
         let lastMarkerTime = currentTime;
 
         // Get weather for starting point
-        try {
-          const startPoint = route[0];
-          const timestamp = Math.floor(currentTime / 1000);
-          const weatherResponse = await fetch(
-            `https://api.openweathermap.org/data/2.5/onecall?lat=${startPoint.start_location.lat()}&lon=${startPoint.start_location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}`,
-          );
+        const startPoint = route[0];
+        const nextPoint = route[1] || null;
+        const startWeather = await fetchWeatherData(
+          startPoint.start_location,
+          nextPoint ? nextPoint.start_location : null,
+          Math.floor(currentTime / 1000),
+          openWeatherApiKey
+        );
 
-          if (!weatherResponse.ok) {
-            throw new Error(`Weather API error: ${weatherResponse.status}`);
-          }
-
-          const weatherData = await weatherResponse.json();
-
-          if (!weatherData || !weatherData.current) {
-            throw new Error("Invalid weather data received");
-          }
-
-          const blackIceRisk = calculateBlackIceRisk(weatherData.current);
-
-          weatherResults.push({
-            position: startPoint.start_location,
-            weather: weatherData.current.weather[0].description,
-            windEffect: determineWindEffect(
-              weatherData.current.wind_deg,
-              selectedSpeed,
-            ),
-            blackIceRisk,
-            arrivalTime: new Date(currentTime),
-            distance: 0,
-            step: startPoint,
-            instructions: startPoint.instructions,
-          });
-        } catch (error) {
-          console.error("Weather API error for starting point:", error);
-          weatherResults.push({
-            position: route[0].start_location,
-            weather: "Weather data unavailable",
-            windEffect: "Unknown",
-            blackIceRisk: {
-              riskLevel: "UNKNOWN",
-              riskScore: 0,
-              riskFactors: [],
-            },
-            arrivalTime: new Date(currentTime),
-            distance: 0,
-            step: route[0],
-            instructions: route[0].instructions,
-          });
-        }
+        weatherResults.push({
+          position: startPoint.start_location,
+          ...startWeather,
+          arrivalTime: new Date(currentTime),
+          distance: 0,
+          step: startPoint,
+          instructions: startPoint.instructions,
+        });
 
         // Process intermediate points
         for (let i = 0; i < route.length - 1; i++) {
@@ -409,128 +434,48 @@
           const arrivalTime = new Date(lastMarkerTime + accumulatedTime);
 
           if (accumulatedTime >= weatherCheckInterval) {
-            try {
-              const timestamp = Math.floor(arrivalTime.getTime() / 1000);
-              const weatherResponse = await fetch(
-                `https://api.openweathermap.org/data/2.5/onecall?lat=${endPoint.start_location.lat()}&lon=${endPoint.start_location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}`,
-              );
+            const nextLocation = (i + 2 < route.length) ? route[i + 2].start_location : null;
+            const pointWeather = await fetchWeatherData(
+              endPoint.start_location,
+              nextLocation,
+              Math.floor(arrivalTime.getTime() / 1000),
+              openWeatherApiKey
+            );
 
-              if (!weatherResponse.ok) {
-                throw new Error(`Weather API error: ${weatherResponse.status}`);
-              }
+            weatherResults.push({
+              position: endPoint.start_location,
+              ...pointWeather,
+              arrivalTime: arrivalTime,
+              distance: accumulatedTime / 1000,
+              step: endPoint,
+              instructions: endPoint.instructions,
+            });
 
-              const weatherData = await weatherResponse.json();
-
-              if (!weatherData || !weatherData.current) {
-                throw new Error("Invalid weather data received");
-              }
-
-              const blackIceRisk = calculateBlackIceRisk(weatherData.current);
-
-              weatherResults.push({
-                position: endPoint.start_location,
-                weather: weatherData.current.weather[0].description,
-                windEffect: determineWindEffect(
-                  weatherData.current.wind_deg,
-                  selectedSpeed,
-                ),
-                blackIceRisk,
-                arrivalTime: arrivalTime,
-                distance: accumulatedTime / 1000,
-                step: endPoint,
-                instructions: endPoint.instructions,
-              });
-
-              lastMarkerTime = arrivalTime.getTime();
-              accumulatedTime = 0;
-            } catch (error) {
-              console.error("Weather API error:", error);
-              weatherResults.push({
-                position: endPoint.start_location,
-                weather: "Weather data unavailable",
-                windEffect: "Unknown",
-                blackIceRisk: {
-                  riskLevel: "UNKNOWN",
-                  riskScore: 0,
-                  riskFactors: [],
-                },
-                arrivalTime: arrivalTime,
-                distance: accumulatedTime / 1000,
-                step: endPoint,
-                instructions: endPoint.instructions,
-              });
-
-              lastMarkerTime = arrivalTime.getTime();
-              accumulatedTime = 0;
-            }
+            lastMarkerTime = arrivalTime.getTime();
+            accumulatedTime = 0;
           }
         }
 
         // Get weather for destination point
         const finalPoint = route[route.length - 1];
         const finalArrivalTime = new Date(lastMarkerTime + accumulatedTime);
+        const finalWeather = await fetchWeatherData(
+          finalPoint.start_location,
+          null, // No next point for the final destination
+          Math.floor(finalArrivalTime.getTime() / 1000),
+          openWeatherApiKey
+        );
 
-        try {
-          const timestamp = Math.floor(finalArrivalTime.getTime() / 1000);
-          const weatherResponse = await fetch(
-            `https://api.openweathermap.org/data/2.5/onecall?lat=${finalPoint.start_location.lat()}&lon=${finalPoint.start_location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}`,
-          );
-
-          if (!weatherResponse.ok) {
-            throw new Error(`Weather API error: ${weatherResponse.status}`);
-          }
-
-          const weatherData = await weatherResponse.json();
-
-          if (!weatherData || !weatherData.current) {
-            throw new Error("Invalid weather data received");
-          }
-
-          const blackIceRisk = calculateBlackIceRisk(weatherData.current);
-
-          weatherResults.push({
-            position: finalPoint.start_location,
-            weather: weatherData.current.weather[0].description,
-            windEffect: determineWindEffect(
-              weatherData.current.wind_deg,
-              selectedSpeed,
-            ),
-            blackIceRisk,
-            arrivalTime: finalArrivalTime,
-            distance: accumulatedTime / 1000,
-            step: finalPoint,
-            instructions: finalPoint.instructions,
-          });
-        } catch (error) {
-          console.error("Weather API error for destination point:", error);
-          weatherResults.push({
-            position: finalPoint.start_location,
-            weather: "Weather data unavailable",
-            windEffect: "Unknown",
-            blackIceRisk: {
-              riskLevel: "UNKNOWN",
-              riskScore: 0,
-              riskFactors: [],
-            },
-            arrivalTime: finalArrivalTime,
-            distance: accumulatedTime / 1000,
-            step: finalPoint,
-            instructions: finalPoint.instructions,
-          });
-        }
+        weatherResults.push({
+          position: finalPoint.start_location,
+          ...finalWeather,
+          arrivalTime: finalArrivalTime,
+          distance: accumulatedTime / 1000,
+          step: finalPoint,
+          instructions: finalPoint.instructions,
+        });
 
         return weatherResults;
-      }
-      function determineWindEffect(windDeg, cyclingDirection) {
-        const angleDiff = Math.abs(windDeg - cyclingDirection);
-
-        if (angleDiff <= 30 || angleDiff >= 330) {
-          return "Tailwind ✅";
-        } else if (angleDiff >= 150 && angleDiff <= 210) {
-          return "Headwind 🆘";
-        } else {
-          return "Crosswind 🌬️";
-        }
       }
 
       function displayRouteDetails(weatherData) {
