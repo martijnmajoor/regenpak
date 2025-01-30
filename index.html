@@ -371,7 +371,7 @@
         const uniqueWeatherIcons = new Set();
         let hasHeadwind = false;
         let hasTailwind = false;
-        let hasBlackIceWarning = false;
+        let hasSignificantBlackIceRisk = false;
 
         weatherResults.forEach((point) => {
           if (point.weatherIcon) uniqueWeatherIcons.add(point.weatherIcon);
@@ -382,8 +382,9 @@
               hasHeadwind = true;
             }
           }
-          if (point.blackIceRisk.riskLevel !== "NONE")
-            hasBlackIceWarning = true;
+          if (point.blackIceRisk.riskLevel === "HIGH" || point.blackIceRisk.riskLevel === "MEDIUM") {
+            hasSignificantBlackIceRisk = true;
+          }
         });
 
         const legendItems = [];
@@ -419,8 +420,8 @@
           `);
         }
 
-        // Add black ice warning to legend if present
-        if (hasBlackIceWarning) {
+        // Add black ice warning to legend only for medium/high risk
+        if (hasSignificantBlackIceRisk) {
           legendItems.push(`
             <div class="legend-item">
               <span>⛸️</span>
@@ -679,8 +680,9 @@
           <div class="weather-point">
             <div class="arrival-time">${weatherPoint.arrivalTime.toLocaleTimeString()}</div>
             <div class="weather-icon">${weatherPoint.weatherIcon}</div>
-            ${weatherPoint.windEffect ? weatherPoint.windEffect : ""}
-            ${weatherPoint.blackIceRisk.riskLevel !== "NONE" ? '<div class="black-ice-warning">⛸️</div>' : ""}
+            ${weatherPoint.windEffect ? weatherPoint.windEffect : ''}
+            ${weatherPoint.blackIceRisk.riskLevel === "HIGH" || weatherPoint.blackIceRisk.riskLevel === "MEDIUM" ? 
+              '<div class="black-ice-warning">⛸️</div>' : ''}
           </div>
         `;
       }
