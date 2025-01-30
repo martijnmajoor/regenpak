@@ -239,6 +239,88 @@
         });
       }
 
+      function calculateBlackIceRisk(weatherData) {
+        // Risk factors and their weights (0-1)
+        const RISK_WEIGHTS = {
+          temperature: 0.3,
+          precipitation: 0.25,
+          humidity: 0.2,
+          dewPoint: 0.25,
+        };
+
+        try {
+          // Extract relevant data (pseudo-code API structure)
+          const {
+            current: {
+              temp: airTemp, // Temperature in Celsius
+              humidity, // Relative humidity in %
+              dew_point: dewPoint, // Dew point in Celsius
+            },
+            hourly: [
+              { precipitation: recentPrecipitation }, // mm of precipitation
+            ],
+          } = weatherData;
+
+          let riskScore = 0;
+          const riskFactors = [];
+
+          // Temperature risk (highest near and below freezing)
+          if (airTemp <= 4) {
+            const tempRisk = airTemp <= 0 ? 1 : (4 - airTemp) / 4;
+            riskScore += tempRisk * RISK_WEIGHTS.temperature;
+            if (tempRisk > 0.5) {
+              riskFactors.push("Temperature near or below freezing");
+            }
+          }
+
+          // Recent precipitation risk
+          if (recentPrecipitation > 0) {
+            const precipRisk = Math.min(recentPrecipitation / 5, 1);
+            riskScore += precipRisk * RISK_WEIGHTS.precipitation;
+            riskFactors.push("Recent precipitation detected");
+          }
+
+          // High humidity risk
+          if (humidity > 70) {
+            const humidityRisk = (humidity - 70) / 30;
+            riskScore += humidityRisk * RISK_WEIGHTS.humidity;
+            if (humidityRisk > 0.5) {
+              riskFactors.push("High humidity conditions");
+            }
+          }
+
+          // Dew point near freezing risk
+          if (dewPoint <= 4) {
+            const dewPointRisk = dewPoint <= 0 ? 1 : (4 - dewPoint) / 4;
+            riskScore += dewPointRisk * RISK_WEIGHTS.dewPoint;
+            if (dewPointRisk > 0.5) {
+              riskFactors.push("Dew point near freezing");
+            }
+          }
+
+          // Determine risk level
+          let riskLevel;
+          if (riskScore >= 0.7) {
+            riskLevel = "HIGH";
+          } else if (riskScore >= 0.4) {
+            riskLevel = "MODERATE";
+          } else {
+            riskLevel = "LOW";
+          }
+
+          return {
+            riskLevel,
+            riskScore: Math.round(riskScore * 100) / 100,
+            riskFactors,
+            timestamp: new Date().toISOString(),
+          };
+        } catch (error) {
+          throw new Error(
+            `Failed to calculate black ice risk: ${error.message}`,
+          );
+        }
+      }
+
       // Previous weather fetching functions remain the same
       async function getWeatherForRoute(
         route,
@@ -278,6 +360,8 @@
             throw new Error("Invalid weather data received");
           }
 
+          const blackIceRisk = calculateBlackIceRisk(weatherData.current);
+
           weatherResults.push({
             position: startPoint.start_location,
             weather: weatherData.current.weather[0].description,
@@ -285,6 +369,7 @@
               weatherData.current.wind_deg,
               selectedSpeed,
             ),
+            blackIceRisk,
             arrivalTime: new Date(currentTime),
             distance: 0,
             step: startPoint,
@@ -296,6 +381,11 @@
             position: route[0].start_location,
             weather: "Weather data unavailable",
             windEffect: "Unknown",
+            blackIceRisk: {
+              riskLevel: "UNKNOWN",
+              riskScore: 0,
+              riskFactors: [],
+            },
             arrivalTime: new Date(currentTime),
             distance: 0,
             step: route[0],
@@ -335,6 +425,8 @@
                 throw new Error("Invalid weather data received");
               }
 
+              const blackIceRisk = calculateBlackIceRisk(weatherData.current);
+
               weatherResults.push({
                 position: endPoint.start_location,
                 weather: weatherData.current.weather[0].description,
@@ -342,6 +434,7 @@
                   weatherData.current.wind_deg,
                   selectedSpeed,
                 ),
+                blackIceRisk,
                 arrivalTime: arrivalTime,
                 distance: accumulatedTime / 1000,
                 step: endPoint,
@@ -356,6 +449,11 @@
                 position: endPoint.start_location,
                 weather: "Weather data unavailable",
                 windEffect: "Unknown",
+                blackIceRisk: {
+                  riskLevel: "UNKNOWN",
+                  riskScore: 0,
+                  riskFactors: [],
+                },
                 arrivalTime: arrivalTime,
                 distance: accumulatedTime / 1000,
                 step: endPoint,
@@ -388,6 +486,8 @@
             throw new Error("Invalid weather data received");
           }
 
+          const blackIceRisk = calculateBlackIceRisk(weatherData.current);
+
           weatherResults.push({
             position: finalPoint.start_location,
             weather: weatherData.current.weather[0].description,
@@ -395,6 +495,7 @@
               weatherData.current.wind_deg,
               selectedSpeed,
             ),
+            blackIceRisk,
             arrivalTime: finalArrivalTime,
             distance: accumulatedTime / 1000,
             step: finalPoint,
@@ -406,6 +507,11 @@
             position: finalPoint.start_location,
             weather: "Weather data unavailable",
             windEffect: "Unknown",
+            blackIceRisk: {
+              riskLevel: "UNKNOWN",
+              riskScore: 0,
+              riskFactors: [],
+            },
             arrivalTime: finalArrivalTime,
             distance: accumulatedTime / 1000,
             step: finalPoint,
@@ -435,6 +541,12 @@
           const stepDiv = document.createElement("div");
           stepDiv.classList.add("route-step");
 
+          if (point.blackIceRisk.riskLevel === "HIGH") {
+            stepDiv.classList.add("risk-high");
+          } else if (point.blackIceRisk.riskLevel === "MODERATE") {
+            stepDiv.classList.add("risk-moderate");
+          }
+
           let locationName = extractLocationName(point.instructions);
 
           // Use default checkpoint name if no location name is found
@@ -447,12 +559,27 @@
                   : `Checkpoint ${index}`;
           }
 
+          let iceWarning = "";
+          if (
+            point.blackIceRisk.riskLevel !== "LOW" &&
+            point.blackIceRisk.riskLevel !== "UNKNOWN"
+          ) {
+            iceWarning = `
+              <div class="ice-warning">
+                ⚠️ Black Ice Risk: ${point.blackIceRisk.riskLevel}
+                <br>
+                Risk Factors: ${point.blackIceRisk.riskFactors.join(", ")}
+              </div>
+            `;
+          }
+
           stepDiv.innerHTML = `
             <h3><span class="checkpoint-number">${index + 1}</span>${locationName}</h3>
             <p><strong>Time:</strong> ${point.arrivalTime.toLocaleTimeString()}</p>
             <p><strong>Weather:</strong> ${point.weather}</p>
             <p><strong>Wind Effect:</strong> ${point.windEffect}</p>
             <p><strong>Distance:</strong> ${(point.distance / 1000).toFixed(2)} km</p>
+            ${iceWarning}
           `;
           output.appendChild(stepDiv);
         });
