@@ -64,6 +64,30 @@
         color: #ff4444;
         font-weight: bold;
       }
+      .cyclist-flipped {
+        display: inline-block;
+        transform: scaleX(-1);
+      }
+      .wind-effect {
+        white-space: nowrap;
+      }
+      .weather-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid #ccc;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .legend-text {
+        font-size: 0.9rem;
+        color: #666;
+      }
     </style>
   </head>
   <body>
@@ -254,123 +278,178 @@
       }
 
       function calculateBlackIceRisk(weatherData) {
-        // Risk factors and their weights (0-1)
-        const RISK_WEIGHTS = {
-          temperature: 0.3,
-          precipitation: 0.25,
-          humidity: 0.2,
-          dewPoint: 0.25,
-        };
+        const temp = weatherData.current.temp;
+        const humidity = weatherData.current.humidity;
+        const weatherDesc =
+          weatherData.current.weather[0].description.toLowerCase();
 
-        try {
-          // Extract relevant data (pseudo-code API structure)
-          const {
-            current: {
-              temp: airTemp, // Temperature in Celsius
-              humidity, // Relative humidity in %
-              dew_point: dewPoint, // Dew point in Celsius
-            },
-            hourly: [
-              { precipitation: recentPrecipitation }, // mm of precipitation
-            ],
-          } = weatherData;
+        let riskScore = 0;
+        const riskFactors = [];
 
-          let riskScore = 0;
-          const riskFactors = [];
-
-          // Temperature risk (highest near and below freezing)
-          if (airTemp <= 4) {
-            const tempRisk = airTemp <= 0 ? 1 : (4 - airTemp) / 4;
-            riskScore += tempRisk * RISK_WEIGHTS.temperature;
-            if (tempRisk > 0.5) {
-              riskFactors.push("Temperature near or below freezing");
-            }
-          }
-
-          // Recent precipitation risk
-          if (recentPrecipitation > 0) {
-            const precipRisk = Math.min(recentPrecipitation / 5, 1);
-            riskScore += precipRisk * RISK_WEIGHTS.precipitation;
-            riskFactors.push("Recent precipitation detected");
-          }
-
-          // High humidity risk
-          if (humidity > 70) {
-            const humidityRisk = (humidity - 70) / 30;
-            riskScore += humidityRisk * RISK_WEIGHTS.humidity;
-            if (humidityRisk > 0.5) {
-              riskFactors.push("High humidity conditions");
-            }
-          }
-
-          // Dew point near freezing risk
-          if (dewPoint <= 4) {
-            const dewPointRisk = dewPoint <= 0 ? 1 : (4 - dewPoint) / 4;
-            riskScore += dewPointRisk * RISK_WEIGHTS.dewPoint;
-            if (dewPointRisk > 0.5) {
-              riskFactors.push("Dew point near freezing");
-            }
-          }
-
-          // Determine risk level
-          let riskLevel;
-          if (riskScore >= 0.7) {
-            riskLevel = "HIGH";
-          } else if (riskScore >= 0.4) {
-            riskLevel = "MODERATE";
-          } else {
-            riskLevel = "LOW";
-          }
-
-          return {
-            riskLevel,
-            riskScore: Math.round(riskScore * 100) / 100,
-            riskFactors,
-            timestamp: new Date().toISOString(),
-          };
-        } catch (error) {
-          throw new Error(
-            `Failed to calculate black ice risk: ${error.message}`,
-          );
+        // Temperature check (highest risk between -2°C and 2°C)
+        if (temp <= 2 && temp >= -2) {
+          riskScore += 3;
+          riskFactors.push("Temperature near freezing");
+        } else if (temp <= 4 && temp >= -4) {
+          riskScore += 2;
+          riskFactors.push("Temperature close to freezing");
         }
+
+        // Humidity check
+        if (humidity > 80) {
+          riskScore += 2;
+          riskFactors.push("High humidity");
+        } else if (humidity > 60) {
+          riskScore += 1;
+          riskFactors.push("Moderate humidity");
+        }
+
+        // Weather conditions check
+        if (
+          weatherDesc.includes("rain") ||
+          weatherDesc.includes("drizzle") ||
+          weatherDesc.includes("sleet") ||
+          weatherDesc.includes("snow")
+        ) {
+          riskScore += 2;
+          riskFactors.push("Precipitation");
+        }
+
+        // Determine risk level
+        let riskLevel = "NONE";
+        if (riskScore >= 5) {
+          riskLevel = "HIGH";
+        } else if (riskScore >= 3) {
+          riskLevel = "MEDIUM";
+        } else if (riskScore >= 1) {
+          riskLevel = "LOW";
+        }
+
+        return {
+          riskLevel,
+          riskScore,
+          riskFactors,
+        };
       }
 
       function determineWindEffect(windDeg, cyclingDirection) {
-        // Calculate the relative angle between wind and cycling direction
         const relativeAngle = Math.abs(windDeg - cyclingDirection);
 
         // Wind coming from behind (tailwind): 0° ± 30°
         if (relativeAngle <= 30 || relativeAngle >= 330) {
-          return "Tailwind ✅";
+          return '<span class="wind-effect"><span>🌬️</span><span class="cyclist-flipped">🚴</span></span>';
         }
         // Wind coming from front (headwind): 180° ± 30°
         else if (relativeAngle >= 150 && relativeAngle <= 210) {
-          return "Headwind 🆘";
+          return '<span class="wind-effect">🌬️🚴</span>';
         }
-        // All other angles are considered crosswind
+        // Crosswind or other angles: return null
         else {
-          return "Crosswind 🌬️";
+          return null;
         }
       }
 
       function getWeatherIcon(weatherDescription) {
         // Convert description to lowercase for easier matching
         const desc = weatherDescription.toLowerCase();
-        
-        if (desc.includes('clear') || desc.includes('sunny')) {
-          return '☀️';
-        } else if (desc.includes('rain') || desc.includes('drizzle')) {
-          return '🌧️';
-        } else if (desc.includes('snow') || desc.includes('sleet')) {
-          return '🌨️';
-        } else if (desc.includes('thunder') || desc.includes('storm')) {
-          return '⛈️';
-        } else if (desc.includes('cloud')) {
-          return '☁️';
-        } else if (desc.includes('mist') || desc.includes('fog')) {
-          return '🌫️';
+
+        if (desc.includes("rain") || desc.includes("drizzle")) {
+          return "🌧️";
+        } else if (desc.includes("snow") || desc.includes("sleet")) {
+          return "🌨️";
+        } else if (desc.includes("thunder") || desc.includes("storm")) {
+          return "⛈️";
+        } else if (desc.includes("mist") || desc.includes("fog")) {
+          return "🌫️";
         } else {
-          return '❓'; // fallback for unknown weather conditions
+          return "";
+        }
+      }
+
+      function createLegend(weatherResults) {
+        // Collect unique weather and wind conditions
+        const uniqueWeatherIcons = new Set();
+        let hasHeadwind = false;
+        let hasTailwind = false;
+        let hasBlackIceWarning = false;
+
+        weatherResults.forEach((point) => {
+          if (point.weatherIcon) uniqueWeatherIcons.add(point.weatherIcon);
+          if (point.windEffect) {
+            if (point.windEffect.includes("cyclist-flipped")) {
+              hasTailwind = true;
+            } else {
+              hasHeadwind = true;
+            }
+          }
+          if (point.blackIceRisk.riskLevel !== "NONE")
+            hasBlackIceWarning = true;
+        });
+
+        const legendItems = [];
+
+        // Add weather icons to legend
+        uniqueWeatherIcons.forEach((icon) => {
+          if (icon) {
+            // Only add if icon is not null
+            legendItems.push(`
+              <div class="legend-item">
+                <span>${icon}</span>
+                <span class="legend-text">${getWeatherDescription(icon)}</span>
+              </div>
+            `);
+          }
+        });
+
+        // Add wind effects to legend
+        if (hasHeadwind) {
+          legendItems.push(`
+            <div class="legend-item">
+              <span class="wind-effect">🌬️🚴</span>
+              <span class="legend-text">Headwind</span>
+            </div>
+          `);
+        }
+        if (hasTailwind) {
+          legendItems.push(`
+            <div class="legend-item">
+              <span class="wind-effect"><span>🌬️</span><span class="cyclist-flipped">🚴</span></span>
+              <span class="legend-text">Tailwind</span>
+            </div>
+          `);
+        }
+
+        // Add black ice warning to legend if present
+        if (hasBlackIceWarning) {
+          legendItems.push(`
+            <div class="legend-item">
+              <span>⛸️</span>
+              <span class="legend-text">Risk of Black Ice</span>
+            </div>
+          `);
+        }
+
+        return legendItems.length
+          ? `
+          <div class="weather-legend">
+            ${legendItems.join("")}
+          </div>
+        `
+          : "";
+      }
+
+      function getWeatherDescription(icon) {
+        switch (icon) {
+          case "🌧️":
+            return "Rain";
+          case "🌨️":
+            return "Snow";
+          case "⛈️":
+            return "Thunderstorm";
+          case "🌫️":
+            return "Fog/Mist";
+          default:
+            return "";
         }
       }
 
@@ -382,7 +461,7 @@
       ) {
         try {
           const weatherResponse = await fetch(
-            `https://api.openweathermap.org/data/2.5/onecall?lat=${location.lat()}&lon=${location.lng()}&dt=${timestamp}&appid=${openWeatherApiKey}&units=metric`,
+            `https://api.openweathermap.org/data/2.5/forecast?lat=${location.lat()}&lon=${location.lng()}&appid=${openWeatherApiKey}&units=metric`,
           );
 
           if (!weatherResponse.ok) {
@@ -391,33 +470,58 @@
 
           const weatherData = await weatherResponse.json();
 
-          if (!weatherData || !weatherData.current) {
+          if (
+            !weatherData ||
+            !weatherData.list ||
+            weatherData.list.length === 0
+          ) {
             throw new Error("Invalid weather data received");
           }
 
+          // Find the forecast closest to our timestamp
+          const targetTime = timestamp * 1000; // Convert to milliseconds
+          const closestForecast = weatherData.list.reduce((prev, curr) => {
+            const prevDiff = Math.abs(prev.dt * 1000 - targetTime);
+            const currDiff = Math.abs(curr.dt * 1000 - targetTime);
+            return currDiff < prevDiff ? curr : prev;
+          });
+
           let cyclingDirection = 0;
           if (nextLocation) {
-            cyclingDirection = google.maps.geometry.spherical.computeHeading(location, nextLocation);
+            cyclingDirection = google.maps.geometry.spherical.computeHeading(
+              location,
+              nextLocation,
+            );
             cyclingDirection = (cyclingDirection + 360) % 360;
           }
 
-          const blackIceRisk = calculateBlackIceRisk(weatherData);
+          // Calculate black ice risk using the closest forecast data
+          const blackIceRisk = calculateBlackIceRisk({
+            current: {
+              temp: closestForecast.main.temp,
+              humidity: closestForecast.main.humidity,
+              weather: closestForecast.weather,
+            },
+          });
 
           return {
-            weatherIcon: getWeatherIcon(weatherData.current.weather[0].description),
-            windEffect: determineWindEffect(weatherData.current.wind_deg, cyclingDirection),
-            blackIceRisk
+            weatherIcon: getWeatherIcon(closestForecast.weather[0].description),
+            windEffect: determineWindEffect(
+              closestForecast.wind.deg,
+              cyclingDirection,
+            ),
+            blackIceRisk,
           };
         } catch (error) {
           console.error("Weather API error:", error);
           return {
-            weatherIcon: '❓',
+            weatherIcon: "",
             windEffect: null,
             blackIceRisk: {
               riskLevel: "NONE",
               riskScore: 0,
-              riskFactors: []
-            }
+              riskFactors: [],
+            },
           };
         }
       }
@@ -524,7 +628,7 @@
 
       function displayRouteDetails(weatherData) {
         const output = document.getElementById("route-output");
-        output.innerHTML = "";
+        output.innerHTML = createLegend(weatherData);
 
         weatherData.forEach((point, index) => {
           const stepDiv = document.createElement("div");
@@ -575,8 +679,8 @@
           <div class="weather-point">
             <div class="arrival-time">${weatherPoint.arrivalTime.toLocaleTimeString()}</div>
             <div class="weather-icon">${weatherPoint.weatherIcon}</div>
-            ${weatherPoint.windEffect ? `<div class="wind-effect">${weatherPoint.windEffect}</div>` : ''}
-            ${weatherPoint.blackIceRisk.riskLevel !== "NONE" ? '<div class="black-ice-warning">⛸️</div>' : ''}
+            ${weatherPoint.windEffect ? weatherPoint.windEffect : ""}
+            ${weatherPoint.blackIceRisk.riskLevel !== "NONE" ? '<div class="black-ice-warning">⛸️</div>' : ""}
           </div>
         `;
       }
