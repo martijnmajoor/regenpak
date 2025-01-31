@@ -88,6 +88,12 @@
         font-size: 0.9rem;
         color: #666;
       }
+      .route-summary {
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid #ccc;
+        font-size: 1.1rem;
+      }
     </style>
   </head>
   <body>
@@ -133,6 +139,9 @@
 
       <button type="submit">Get Route</button>
     </form>
+
+    <!-- Add this div right after the form -->
+    <div id="weather-display"></div>
 
     <div id="route-output"></div>
 
@@ -332,7 +341,12 @@
         };
       }
 
-      function determineWindEffect(windDeg, cyclingDirection) {
+      function determineWindEffect(windDeg, windSpeed, cyclingDirection) {
+        // Only show wind effects if wind speed is above 5 m/s (approximately 18 km/h)
+        if (windSpeed < 5) {
+          return null;
+        }
+
         const relativeAngle = Math.abs(windDeg - cyclingDirection);
 
         // Wind coming from behind (tailwind): 0° ± 30°
@@ -382,7 +396,10 @@
               hasHeadwind = true;
             }
           }
-          if (point.blackIceRisk.riskLevel === "HIGH" || point.blackIceRisk.riskLevel === "MEDIUM") {
+          if (
+            point.blackIceRisk.riskLevel === "HIGH" ||
+            point.blackIceRisk.riskLevel === "MEDIUM"
+          ) {
             hasSignificantBlackIceRisk = true;
           }
         });
@@ -509,6 +526,7 @@
             weatherIcon: getWeatherIcon(closestForecast.weather[0].description),
             windEffect: determineWindEffect(
               closestForecast.wind.deg,
+              closestForecast.wind.speed,
               cyclingDirection,
             ),
             blackIceRisk,
@@ -516,7 +534,7 @@
         } catch (error) {
           console.error("Weather API error:", error);
           return {
-            weatherIcon: "",
+            weatherIcon: null,
             windEffect: null,
             blackIceRisk: {
               riskLevel: "NONE",
@@ -525,6 +543,54 @@
             },
           };
         }
+      }
+
+      function getRandomGifUrl(searchTerm) {
+        const happyCyclingGifs = [
+          "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExcTg0NTIyb2VsYWR5azRodnNxb3Jydm55dmJpejg0aHh6b2JwMnN5MSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/qLVGt6Go1dQFp4qVcg/giphy.gif",
+          "https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3U4cHMyeXd0ZWE5Z2wwenV3NWozZ3lsemVoOXdqd2hzZTBkdnJ2YSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/u9ntJMbnX7orBnNtbx/giphy.gif",
+          "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXcxN2VxOHBpa2w2cWRta2NhZDBoczk1Nmk2YWk0bmxuY3lqMjJmaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ckTzLQGxEKwb8M2MnC/giphy.gif",
+        ];
+
+        const cyclingRainGifs = [
+          "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExYXFzaTQ2ZW0yMWNjZ2V2dmpvYjU0ZThydWloc3B0OG83bnNwbWtzeCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/W0c3xcZ3F1d0EYYb0f/giphy.gif",
+          "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExemIxNmx2Y2Y2cm10M2t6NnJvcnN0bTk1YTVnNWNlNDdxMzBzaDZsYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o7TKGVqdQdyGb3aDe/giphy.gif",
+          "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExejN5YzJzNHdrdG03ZmwycDdoZjNoNmplcWVqdzA4OTRsbjU2MnRuaiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/249LrNgHso7RgosWP4/giphy.gif",
+        ];
+
+        const gifList =
+          searchTerm === "cycling rain" ? cyclingRainGifs : happyCyclingGifs;
+        const randomIndex = Math.floor(Math.random() * gifList.length);
+        return gifList[randomIndex];
+      }
+
+      function createRouteSummary(weatherResults, destination) {
+        const hasPrecipitation = weatherResults.some((point) => {
+          return (
+            point.weatherIcon === "🌧️" ||
+            point.weatherIcon === "🌨️" ||
+            point.weatherIcon === "⛈️"
+          );
+        });
+
+        const searchTerm = hasPrecipitation ? "cycling rain" : "happy cycling";
+        const gifUrl = getRandomGifUrl(searchTerm);
+        const summaryText = hasPrecipitation
+          ? "You should probably wear a raincoat"
+          : "Smooth sailing all the way to " + destination;
+
+        return (
+          '<div class="route-summary">' +
+          '<div style="max-width: 300px; margin: 0 auto;">' +
+          '<img src="' +
+          gifUrl +
+          '" style="width: 100%; height: auto; border-radius: 8px;">' +
+          "</div>" +
+          "<p>" +
+          summaryText +
+          "</p>" +
+          "</div>"
+        );
       }
 
       async function getWeatherForRoute(
@@ -624,6 +690,17 @@
           instructions: finalPoint.instructions,
         });
 
+        // After collecting all weather results, display them
+        const weatherDisplay = document.getElementById("weather-display");
+        const destinationInput = document.getElementById("to");
+
+        if (weatherDisplay) {
+          weatherDisplay.innerHTML = createRouteSummary(
+            weatherResults,
+            destinationInput.value,
+          );
+        }
+
         return weatherResults;
       }
 
@@ -634,12 +711,6 @@
         weatherData.forEach((point, index) => {
           const stepDiv = document.createElement("div");
           stepDiv.classList.add("route-step");
-
-          if (point.blackIceRisk.riskLevel === "HIGH") {
-            stepDiv.classList.add("risk-high");
-          } else if (point.blackIceRisk.riskLevel === "MODERATE") {
-            stepDiv.classList.add("risk-moderate");
-          }
 
           let locationName = extractLocationName(point.instructions);
 
@@ -680,9 +751,13 @@
           <div class="weather-point">
             <div class="arrival-time">${weatherPoint.arrivalTime.toLocaleTimeString()}</div>
             <div class="weather-icon">${weatherPoint.weatherIcon}</div>
-            ${weatherPoint.windEffect ? weatherPoint.windEffect : ''}
-            ${weatherPoint.blackIceRisk.riskLevel === "HIGH" || weatherPoint.blackIceRisk.riskLevel === "MEDIUM" ? 
-              '<div class="black-ice-warning">⛸️</div>' : ''}
+            ${weatherPoint.windEffect ? weatherPoint.windEffect : ""}
+            ${
+              weatherPoint.blackIceRisk.riskLevel === "HIGH" ||
+              weatherPoint.blackIceRisk.riskLevel === "MEDIUM"
+                ? '<div class="black-ice-warning">⛸️</div>'
+                : ""
+            }
           </div>
         `;
       }
