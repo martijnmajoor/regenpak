@@ -11,9 +11,9 @@
         padding: 10px;
         position: relative;
       }
-      
+
       .route-step:not(:last-child)::after {
-        content: '';
+        content: "";
         position: absolute;
         top: 32px;
         left: 50%;
@@ -111,11 +111,15 @@
         border-bottom: 1px solid #ccc;
         max-width: 800px;
         margin: 0 auto;
+        justify-content: center;
       }
       .legend-item {
         display: flex;
         align-items: center;
         gap: 0.5rem;
+        justify-content: center;
+        min-width: 120px;
+        text-align: center;
       }
       .legend-text {
         font-size: 0.9rem;
@@ -136,7 +140,7 @@
         align-items: center;
       }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
         line-height: 1.4;
         max-width: 800px;
@@ -181,11 +185,21 @@
       #route-form button:hover {
         background-color: #0056b3;
       }
+
+      .text-center {
+        text-align: center;
+      }
     </style>
   </head>
   <body>
     <!-- Previous HTML form remains the same -->
-    <h1>Cycling Route Weather</h1>
+    <h1>Should I wear a raincoat?</h1>
+    <p class="text-center">
+      If we can't WFH, at least we can ride dry!
+      <a href="https://github.com/martijnmajoor/regenpak"
+        >Source code on Github</a
+      >
+    </p>
     <form id="route-form">
       <label for="from">Address From:</label>
       <input type="text" id="from" name="from" required /><br />
@@ -802,11 +816,12 @@
           let locationName = extractLocationName(point.instructions);
 
           if (!locationName) {
-            locationName = index === 0
-              ? "Starting Point"
-              : index === weatherData.length - 1
-                ? "Destination"
-                : `Checkpoint ${index}`;
+            locationName =
+              index === 0
+                ? "Starting Point"
+                : index === weatherData.length - 1
+                  ? "Destination"
+                  : `Checkpoint ${index}`;
           }
 
           stepDiv.innerHTML = `
@@ -822,10 +837,13 @@
         const icons = [
           weatherPoint.weatherIcon,
           weatherPoint.windEffect,
-          (weatherPoint.blackIceRisk.riskLevel === "HIGH" || 
-           weatherPoint.blackIceRisk.riskLevel === "MEDIUM") ? 
-            '<div class="black-ice-warning">⛸️</div>' : ''
-        ].filter(Boolean).join('');
+          weatherPoint.blackIceRisk.riskLevel === "HIGH" ||
+          weatherPoint.blackIceRisk.riskLevel === "MEDIUM"
+            ? '<div class="black-ice-warning">⛸️</div>'
+            : "",
+        ]
+          .filter(Boolean)
+          .join("");
 
         return `
           <div class="weather-point">
