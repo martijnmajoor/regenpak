@@ -7,26 +7,63 @@
     <title>Cycling Route Weather</title>
     <style>
       .route-step {
-        margin: 20px 0;
-        padding: 20px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        background-color: #f9f9f9;
+        margin: 35px 0;
+        padding: 10px;
+        position: relative;
       }
-      .route-step h3 {
-        margin-top: 0;
-        color: #333;
+      
+      .route-step:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        top: 32px;
+        left: 50%;
+        width: 2px;
+        height: calc(100% + 35px);
+        background-color: #007bff;
+        transform: translateX(-50%);
+        z-index: -1;
       }
+
       .checkpoint-number {
-        display: inline-block;
+        display: flex;
         background-color: #007bff;
         color: white;
-        width: 24px;
-        height: 24px;
+        width: 32px;
+        height: 32px;
         border-radius: 50%;
+        justify-content: center;
+        align-items: center;
+        margin: 0 auto 8px auto;
+        font-size: 14px;
+        position: relative;
+        z-index: 1;
+      }
+      .checkpoint-name {
         text-align: center;
-        line-height: 24px;
-        margin-right: 10px;
+        color: #333;
+        font-weight: 500;
+        background-color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+      .arrival-time {
+        text-align: center;
+        color: #666;
+        font-size: 0.9rem;
+        background-color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        margin-top: -4px;
+      }
+      .weather-icons {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+        align-items: center;
+        background-color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        margin-top: -4px;
       }
       .risk-high {
         background-color: #ffebee;
@@ -50,12 +87,6 @@
         background-color: #ff9800;
         color: white;
       }
-      .weather-point {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 0.5rem;
-      }
       .weather-icon {
         font-size: 1.5rem;
         cursor: help;
@@ -78,6 +109,8 @@
         padding: 1rem;
         margin-bottom: 1rem;
         border-bottom: 1px solid #ccc;
+        max-width: 800px;
+        margin: 0 auto;
       }
       .legend-item {
         display: flex;
@@ -93,6 +126,60 @@
         margin-bottom: 1rem;
         border-bottom: 1px solid #ccc;
         font-size: 1.1rem;
+        max-width: 800px;
+        margin: 0 auto;
+        text-align: center;
+      }
+      .weather-point {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 
+          Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+        line-height: 1.4;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      h1 {
+        text-align: center;
+      }
+
+      #route-form {
+        max-width: 500px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      #route-form label {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      #route-form input,
+      #route-form select {
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 15px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+
+      #route-form button {
+        width: 100%;
+        padding: 10px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      #route-form button:hover {
+        background-color: #0056b3;
       }
     </style>
   </head>
@@ -714,32 +801,17 @@
 
           let locationName = extractLocationName(point.instructions);
 
-          // Use default checkpoint name if no location name is found
           if (!locationName) {
-            locationName =
-              index === 0
-                ? "Starting Point"
-                : index === weatherData.length - 1
-                  ? "Destination"
-                  : `Checkpoint ${index}`;
-          }
-
-          let iceWarning = "";
-          if (
-            point.blackIceRisk.riskLevel !== "LOW" &&
-            point.blackIceRisk.riskLevel !== "UNKNOWN"
-          ) {
-            iceWarning = `
-              <div class="ice-warning">
-                ⚠️ Black Ice Risk: ${point.blackIceRisk.riskLevel}
-                <br>
-                Risk Factors: ${point.blackIceRisk.riskFactors.join(", ")}
-              </div>
-            `;
+            locationName = index === 0
+              ? "Starting Point"
+              : index === weatherData.length - 1
+                ? "Destination"
+                : `Checkpoint ${index}`;
           }
 
           stepDiv.innerHTML = `
-            <h3><span class="checkpoint-number">${index + 1}</span>${locationName}</h3>
+            <div class="checkpoint-number">${index + 1}</div>
+            <div class="checkpoint-name">${locationName}</div>
             ${displayWeatherPoint(point)}
           `;
           output.appendChild(stepDiv);
@@ -747,17 +819,18 @@
       }
 
       function displayWeatherPoint(weatherPoint) {
+        const icons = [
+          weatherPoint.weatherIcon,
+          weatherPoint.windEffect,
+          (weatherPoint.blackIceRisk.riskLevel === "HIGH" || 
+           weatherPoint.blackIceRisk.riskLevel === "MEDIUM") ? 
+            '<div class="black-ice-warning">⛸️</div>' : ''
+        ].filter(Boolean).join('');
+
         return `
           <div class="weather-point">
             <div class="arrival-time">${weatherPoint.arrivalTime.toLocaleTimeString()}</div>
-            <div class="weather-icon">${weatherPoint.weatherIcon}</div>
-            ${weatherPoint.windEffect ? weatherPoint.windEffect : ""}
-            ${
-              weatherPoint.blackIceRisk.riskLevel === "HIGH" ||
-              weatherPoint.blackIceRisk.riskLevel === "MEDIUM"
-                ? '<div class="black-ice-warning">⛸️</div>'
-                : ""
-            }
+            <div class="weather-icons">${icons}</div>
           </div>
         `;
       }
